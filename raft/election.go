@@ -35,6 +35,31 @@ func (n *Node) startElection() {
 	n.Network.Send(peerID, msg)
 }
 }
+func (n *Node) handleRequestVote(args RequestVoteArgs) RequestVoteReply {
+	reply := RequestVoteReply{
+		VoteGranted: false,
+	}
+	if args.Term > n.CurrentTerm {
+		n.CurrentTerm = args.Term
+		n.Role = Follower
+		n.VotedFor = ""
+		n.Storage.SaveState(PersistentState{
+			CurrentTerm: n.CurrentTerm,
+			VotedFor:    n.VotedFor,
+		})
+	}
+	if args.Term == n.CurrentTerm && (n.VotedFor == "" || n.VotedFor == args.CandidateID) {
+		reply.VoteGranted = true
+		n.VotedFor = args.CandidateID
+		n.Storage.SaveState(PersistentState{
+			CurrentTerm: n.CurrentTerm,
+			VotedFor:    n.VotedFor,
+		})
+	}
+	reply.Term = n.CurrentTerm
+	return reply
+}
+
 func (n *Node) electionTimeout() time.Duration {
 	base := 150 * time.Millisecond
 	jitter := time.Duration(n.RNG.Intn(150)) * time.Millisecond
