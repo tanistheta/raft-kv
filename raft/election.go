@@ -60,6 +60,24 @@ func (n *Node) handleRequestVote(args RequestVoteArgs) RequestVoteReply {
 	return reply
 }
 
+func (n *Node) handleRequestVoteReply(reply RequestVoteReply) {
+	if reply.Term > n.CurrentTerm {
+		n.CurrentTerm = reply.Term
+		n.Role = Follower
+		n.VotedFor = ""
+		n.Storage.SaveState(PersistentState{
+			CurrentTerm: n.CurrentTerm,
+			VotedFor:    n.VotedFor,
+		})
+	}
+	if reply.VoteGranted {
+		n.VotesReceived++
+		if n.VotesReceived >= (len(n.Peers)+1)/2+1 {
+			n.Role = Leader
+		}
+	}
+}
+
 func (n *Node) electionTimeout() time.Duration {
 	base := 150 * time.Millisecond
 	jitter := time.Duration(n.RNG.Intn(150)) * time.Millisecond
