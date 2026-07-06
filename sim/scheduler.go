@@ -3,6 +3,7 @@
 import (
 	"container/heap"
 	"time"
+	"raft-kv/raft"
 )
 
 // event is a single scheduled callback, ordered by virtual time
@@ -66,6 +67,16 @@ func (s *Scheduler) Schedule(after time.Duration, fn func()) {
 		fn: fn,
 	})
 }
+
+func (s *Scheduler) After(d time.Duration) <-chan time.Time {
+	ch := make(chan time.Time, 1)
+	s.Schedule(d, func() {
+		ch <- s.Now()
+	})
+	return ch
+}
+
+var _ raft.Clock = (*Scheduler)(nil)
 
 // Run drains the event queue: pop earliest event,jump virtual clock
 //to its time, execute it. Stops when the queue is empty
