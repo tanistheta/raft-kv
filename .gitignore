@@ -1,0 +1,5 @@
+﻿raft-kv.exe
+raft-kv
+*.exe
+.vscode/
+.idea/
