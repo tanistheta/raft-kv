@@ -10,6 +10,7 @@ type Clock interface{
 }
 
 type RPCMessage struct{
+	Type string
 	From NodeID
 	To NodeID
 	Term int
