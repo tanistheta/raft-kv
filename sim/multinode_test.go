@@ -103,3 +103,57 @@ func TestLeaderDisconnectAndReelect(t *testing.T) {
 	}
 	t.Logf("new leader after disconnect: %v", newLeaderID)
 }
+
+func TestPartitionMajorityReelects(t *testing.T) {
+	scheduler := NewScheduler()
+	injector := NewFaultInjector(42)
+	network := NewInMemoryNetwork(scheduler, injector)
+
+	ids := []raft.NodeID{"A", "B", "C"}
+	nodes := setupNodes(scheduler, network, ids)
+
+	nodes["A"].StartElection()
+	scheduler.RunFor(500 * time.Millisecond)
+
+	var leaderID raft.NodeID
+	for id, node := range nodes {
+		if node.Role == raft.Leader {
+			leaderID = id
+			break
+		}
+	}
+
+	// Partition the network: isolate the leader from the other two nodes
+	var otherTwo []raft.NodeID
+	for _, id := range ids {
+		if id != leaderID {
+			otherTwo = append(otherTwo, id)
+		}
+	}
+	injector.Partition([]raft.NodeID{leaderID}, otherTwo)
+	scheduler.RunFor(500 * time.Millisecond)
+
+	//assert that a new leader is elected among the remaining nodes
+	newLeaderCount := 0
+	var newLeaderID raft.NodeID
+
+	for id, node := range nodes {
+		if id == leaderID {
+			continue
+		}	
+	if node.Role == raft.Leader {
+			newLeaderCount++
+			newLeaderID = id
+		}	
+	}
+	if newLeaderCount == 0 {
+		t.Fatal("no new leader elected after partition")
+	}
+	if newLeaderCount > 1 {
+		t.Fatalf("split-brain: %d leaders among majority side", newLeaderCount)
+	}
+	if newLeaderID == leaderID {
+		t.Fatalf("partitioned leader still counted as leader")
+	}
+	t.Logf("old leader: %v, new leader after partition: %v", leaderID, newLeaderID)
+}

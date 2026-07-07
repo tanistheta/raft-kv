@@ -12,6 +12,8 @@ type FaultInjector struct {
 	dropRate float64
 	minDelay time.Duration
 	maxDelay time.Duration
+	partitionA map[raft.NodeID]bool
+	partitionB map[raft.NodeID]bool
 }
 
 func NewFaultInjector(seed int64) *FaultInjector {
@@ -28,6 +30,29 @@ func (f *FaultInjector) NetworkDelay() time.Duration {
 	return f.minDelay + time.Duration(f.rng.Int63n(span+1))
 }
 
+func (f *FaultInjector) Partition(groupA, groupB []raft.NodeID) {
+	f.partitionA = make(map[raft.NodeID]bool)
+	f.partitionB = make(map[raft.NodeID]bool)
+	for _, id := range groupA {
+		f.partitionA[id] = true
+	}
+	for _, id := range groupB {
+		f.partitionB[id] = true
+	}
+}
+
+func (f *FaultInjector) HealPartition() {
+	f.partitionA = nil
+	f.partitionB = nil
+}
+
 func (f *FaultInjector) ShouldDrop(from, to raft.NodeID, msg raft.RPCMessage) bool {
+	if f.partitionA != nil && f.partitionB != nil {
+		fromA, toA := f.partitionA[from], f.partitionA[to]
+		fromB, toB := f.partitionB[from], f.partitionB[to]
+		if (fromA && toB) || (fromB && toA) {
+			return true
+		}
+	}
 	return f.rng.Float64() < f.dropRate
 }
