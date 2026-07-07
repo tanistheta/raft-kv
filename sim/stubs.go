@@ -46,3 +46,10 @@ func (StubStorage) LoadState() (raft.PersistentState, error) { return raft.Persi
 type StubRNG struct{}
 
 func (StubRNG) Intn(n int) int {return 0}
+
+type RealClock struct{}
+
+func (RealClock) Now() time.Time { return time.Now() }
+func (RealClock) After(d time.Duration) <-chan time.Time {
+	return time.After(d)
+}

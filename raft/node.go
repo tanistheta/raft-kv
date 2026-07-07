@@ -27,34 +27,33 @@ type Node struct {
 }
 
 func (n *Node) Run() {
-	for msg := range n.Inbox {
-		switch msg.Type {
-		case "RequestVote":
-			args := msg.Payload.(RequestVoteArgs)
-			reply := n.handleRequestVote(args)
-			n.Network.Send(msg.From, RPCMessage{
-				Type:    "RequestVoteReply",
-				From:    n.NodeID,
-				To:      msg.From,
-				Term:    n.CurrentTerm,
-				Payload: reply,
-			})
-		case "RequestVoteReply":
-			reply := msg.Payload.(RequestVoteReply)
-			n.handleRequestVoteReply(reply)
-		case "AppendEntries":
-			args := msg.Payload.(AppendEntriesArgs)
-			reply := n.handleAppendEntries(args)
-			n.Network.Send(msg.From, RPCMessage{
-				Type:    "AppendEntriesReply",
-				From:    n.NodeID,
-				To:      msg.From,
-				Term:    n.CurrentTerm,
-				Payload: reply,
-			})
-		case "AppendEntriesReply":
-			reply := msg.Payload.(AppendEntriesReply)
-			n.handleAppendEntriesReply(reply)
+	for {
+		select {
+		case msg := <-n.Inbox:
+			switch msg.Type {
+			case "RequestVote":
+				args := msg.Payload.(RequestVoteArgs)
+				reply := n.handleRequestVote(args)
+				n.Network.Send(msg.From, RPCMessage{
+					Type: "RequestVoteReply", From: n.NodeID, To: msg.From,
+					Term: n.CurrentTerm, Payload: reply,
+				})
+			case "RequestVoteReply":
+				n.handleRequestVoteReply(msg.Payload.(RequestVoteReply))
+			case "AppendEntries":
+				args := msg.Payload.(AppendEntriesArgs)
+				reply := n.handleAppendEntries(args)
+				n.Network.Send(msg.From, RPCMessage{
+					Type: "AppendEntriesReply", From: n.NodeID, To: msg.From,
+					Term: n.CurrentTerm, Payload: reply,
+				})
+			case "AppendEntriesReply":
+				n.handleAppendEntriesReply(msg.Payload.(AppendEntriesReply))
+			}
+		case <-n.ElectionTimer:
+			if n.Role != Leader {
+				n.StartElection()
+			}
 		}
 	}
 }

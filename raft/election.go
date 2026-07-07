@@ -74,6 +74,7 @@ func (n *Node) handleRequestVoteReply(reply RequestVoteReply) {
 		n.VotesReceived++
 		if n.VotesReceived >= (len(n.Peers)+1)/2+1 {
 			n.Role = Leader
+			go n.runAsLeader()
 		}
 	}
 }
@@ -82,4 +83,11 @@ func (n *Node) electionTimeout() time.Duration {
 	base := 150 * time.Millisecond
 	jitter := time.Duration(n.RNG.Intn(150)) * time.Millisecond
 	return base + jitter
+}
+
+func (n *Node) runAsLeader() {
+	for n.Role == Leader {
+		n.sendHeartbeat()
+		<-n.Clock.After(50 * time.Millisecond) // heartbeat interval
+	}
 }
