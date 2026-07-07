@@ -9,7 +9,7 @@ type RequestVoteReply struct {
 	Term        int
 	VoteGranted bool
 }
-func (n *Node) startElection() {
+func (n *Node) StartElection() {
 	n.CurrentTerm++
 	n.Role = Candidate
 	n.VotedFor = n.NodeID
