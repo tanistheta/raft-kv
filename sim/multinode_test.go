@@ -1,17 +1,15 @@
 package sim
+
 import (
 	"testing"
 	"time"
+
 	"raft-kv/raft"
 )
 
-func TestThreeNodeElection(t *testing.T) {
-	network := NewInMemoryNetwork()
-
-	ids := []raft.NodeID{"A", "B", "C"}
+func setupNodes(scheduler *Scheduler, network *InMemoryNetwork, ids []raft.NodeID) map[raft.NodeID]*raft.Node {
 	nodes := make(map[raft.NodeID]*raft.Node)
-
-	for _, id := range ids {
+	for i, id := range ids {
 		peers := []raft.NodeID{}
 		for _, other := range ids {
 			if other != id {
@@ -19,21 +17,31 @@ func TestThreeNodeElection(t *testing.T) {
 			}
 		}
 		node := &raft.Node{
-			NodeID: id,
-			Peers:  peers,
-			Clock:  RealClock{},
-			Role:   raft.Follower,
+			NodeID:  id,
+			Peers:   peers,
+			Role:    raft.Follower,
+			Clock:   scheduler,
 			Network: network,
 			Storage: StubStorage{},
-			RNG: StubRNG{},
-			Inbox: network.Register(id),
+			RNG:     NewSeededRNG(int64(1000 + i)),
 		}
+		node.Start()
 		nodes[id] = node
-		go node.Run()
 	}
-	
+	return nodes
+}
+
+func TestThreeNodeElection(t *testing.T) {
+	scheduler := NewScheduler()
+	injector := NewFaultInjector(42)
+	network := NewInMemoryNetwork(scheduler, injector)
+
+	ids := []raft.NodeID{"A", "B", "C"}
+	nodes := setupNodes(scheduler, network, ids)
+
 	nodes["A"].StartElection()
-	time.Sleep(500 * time.Millisecond)
+	scheduler.RunFor(500 * time.Millisecond)
+
 	leaderCount := 0
 	for _, node := range nodes {
 		if node.Role == raft.Leader {
@@ -46,34 +54,15 @@ func TestThreeNodeElection(t *testing.T) {
 }
 
 func TestLeaderDisconnectAndReelect(t *testing.T) {
-	network := NewInMemoryNetwork()
+	scheduler := NewScheduler()
+	injector := NewFaultInjector(42)
+	network := NewInMemoryNetwork(scheduler, injector)
 
 	ids := []raft.NodeID{"A", "B", "C"}
-	nodes := make(map[raft.NodeID]*raft.Node)
-
-	for _, id := range ids {
-		peers := []raft.NodeID{}
-		for _, other := range ids {
-			if other != id {
-				peers = append(peers, other)
-			}
-		}
-		node := &raft.Node{
-			NodeID:  id,
-			Peers:   peers,
-			Role:    raft.Follower,
-			Clock:   RealClock{},
-			Network: network,
-			Storage: StubStorage{},
-			RNG:     StubRNG{},
-			Inbox:   network.Register(id),
-		}
-		nodes[id] = node
-		go node.Run()
-	}
+	nodes := setupNodes(scheduler, network, ids)
 
 	nodes["A"].StartElection()
-	time.Sleep(500 * time.Millisecond)
+	scheduler.RunFor(500 * time.Millisecond)
 
 	var leaderID raft.NodeID
 	leaderCount := 0
@@ -89,8 +78,7 @@ func TestLeaderDisconnectAndReelect(t *testing.T) {
 	t.Logf("original leader: %v", leaderID)
 
 	network.Unregister(leaderID)
-
-	time.Sleep(500 * time.Millisecond)
+	scheduler.RunFor(500 * time.Millisecond)
 
 	newLeaderCount := 0
 	var newLeaderID raft.NodeID

@@ -21,10 +21,9 @@ func (n *Node) handleAppendEntries(args AppendEntriesArgs) AppendEntriesReply {
 
 	if args.Term > n.CurrentTerm {
 		n.CurrentTerm = args.Term
-		n.Role = Follower
 	}
-
-	n.ElectionTimer = n.Clock.After(n.electionTimeout())
+	n.Role = Follower
+	n.resetElectionTimer()
 
 	reply.Success = true
 	reply.Term = n.CurrentTerm

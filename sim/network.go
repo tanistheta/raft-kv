@@ -3,37 +3,42 @@
 import "raft-kv/raft"
 
 type InMemoryNetwork struct {
-	inboxes map[raft.NodeID]chan raft.RPCMessage
+	handlers  map[raft.NodeID]func(raft.RPCMessage)
+	scheduler *Scheduler
+	injector  *FaultInjector
 }
 
-func NewInMemoryNetwork() *InMemoryNetwork {
+func NewInMemoryNetwork(s *Scheduler, injector *FaultInjector) *InMemoryNetwork {
 	return &InMemoryNetwork{
-		inboxes: make(map[raft.NodeID]chan raft.RPCMessage),
+		handlers:  make(map[raft.NodeID]func(raft.RPCMessage)),
+		scheduler: s,
+		injector:  injector,
 	}
+}
+
+func (net *InMemoryNetwork) Register(id raft.NodeID, handler func(raft.RPCMessage)) {
+	net.handlers[id] = handler
 }
 
 func (net *InMemoryNetwork) Unregister(id raft.NodeID) {
-	delete(net.inboxes, id)
-}
-
-func (net *InMemoryNetwork) Register(id raft.NodeID) chan raft.RPCMessage {
-	ch := make(chan raft.RPCMessage, 100) 
-	net.inboxes[id] = ch
-	return ch
+	delete(net.handlers, id)
 }
 
 func (net *InMemoryNetwork) Send(to raft.NodeID, msg raft.RPCMessage) error {
-	if _, ok := net.inboxes[msg.From]; !ok {
-		return nil // sender is disconnected — drop the message
+	if _, ok := net.handlers[msg.From]; !ok {
+		return nil
 	}
-	ch, ok := net.inboxes[to]
+	handler, ok := net.handlers[to]
 	if !ok {
 		return nil
 	}
-	ch <- msg
-	return nil
-}
 
-func (net *InMemoryNetwork) Recv() <-chan raft.RPCMessage {
-	panic("Recv() is per-node, not per-network — use the channel from Register()")
+	delay := net.injector.NetworkDelay()
+	net.scheduler.Schedule(delay, func() {
+		if net.injector.ShouldDrop(msg.From, to, msg) {
+			return
+		}
+		handler(msg)
+	})
+	return nil
 }

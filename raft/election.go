@@ -9,6 +9,7 @@ type RequestVoteReply struct {
 	Term        int
 	VoteGranted bool
 }
+
 func (n *Node) StartElection() {
 	n.CurrentTerm++
 	n.Role = Candidate
@@ -17,24 +18,25 @@ func (n *Node) StartElection() {
 		CurrentTerm: n.CurrentTerm,
 		VotedFor:    n.VotedFor,
 	})
-	n.ElectionTimer = n.Clock.After(n.electionTimeout())
-	n.VotesReceived = 1 //vote for self
+	n.resetElectionTimer()
+	n.VotesReceived = 1 // vote for self
 
 	for _, peerID := range n.Peers {
-	args := RequestVoteArgs{
-		Term:        n.CurrentTerm,
-		CandidateID: n.NodeID,
+		args := RequestVoteArgs{
+			Term:        n.CurrentTerm,
+			CandidateID: n.NodeID,
+		}
+		msg := RPCMessage{
+			Type:    "RequestVote",
+			From:    n.NodeID,
+			To:      peerID,
+			Term:    n.CurrentTerm,
+			Payload: args,
+		}
+		n.Network.Send(peerID, msg)
 	}
-	 msg := RPCMessage{
-            Type:    "RequestVote",
-            From:    n.NodeID,
-            To:      peerID,
-			Term:   n.CurrentTerm,
-            Payload: args,
 }
-	n.Network.Send(peerID, msg)
-}
-}
+
 func (n *Node) handleRequestVote(args RequestVoteArgs) RequestVoteReply {
 	reply := RequestVoteReply{
 		VoteGranted: false,
@@ -55,6 +57,7 @@ func (n *Node) handleRequestVote(args RequestVoteArgs) RequestVoteReply {
 			CurrentTerm: n.CurrentTerm,
 			VotedFor:    n.VotedFor,
 		})
+		n.resetElectionTimer()
 	}
 	reply.Term = n.CurrentTerm
 	return reply
@@ -69,12 +72,14 @@ func (n *Node) handleRequestVoteReply(reply RequestVoteReply) {
 			CurrentTerm: n.CurrentTerm,
 			VotedFor:    n.VotedFor,
 		})
+		n.resetElectionTimer()
+		return
 	}
-	if reply.VoteGranted {
+	if reply.VoteGranted && n.Role == Candidate {
 		n.VotesReceived++
 		if n.VotesReceived >= (len(n.Peers)+1)/2+1 {
 			n.Role = Leader
-			go n.runAsLeader()
+			n.runAsLeader()
 		}
 	}
 }
@@ -86,8 +91,11 @@ func (n *Node) electionTimeout() time.Duration {
 }
 
 func (n *Node) runAsLeader() {
-	for n.Role == Leader {
-		n.sendHeartbeat()
-		<-n.Clock.After(50 * time.Millisecond) // heartbeat interval
+	if n.Role != Leader {
+		return
 	}
+	n.sendHeartbeat()
+	n.Clock.AfterFunc(50*time.Millisecond, func() {
+		n.runAsLeader()
+	})
 }
