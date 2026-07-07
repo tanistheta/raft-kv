@@ -47,3 +47,10 @@ func (n *Node) sendHeartbeat() {
 		n.Network.Send(peerID, msg)
 	}
 }
+
+func (n *Node) handleAppendEntriesReply(reply AppendEntriesReply) {
+	if reply.Term > n.CurrentTerm {
+		n.CurrentTerm = reply.Term
+		n.Role = Follower
+	}
+}
