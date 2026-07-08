@@ -4,36 +4,37 @@ import "time"
 
 type NodeID string
 
-type Clock interface{
+type Clock interface {
 	Now() time.Time
 	After(d time.Duration) <-chan time.Time
+	AfterFunc(d time.Duration, fn func())
 }
 
-type RPCMessage struct{
-	Type string
-	From NodeID
-	To NodeID
-	Term int
+type RPCMessage struct {
+	Type    string
+	From    NodeID
+	To      NodeID
+	Term    int
 	Payload interface{}
 }
 
-type Network interface{
+type Network interface {
 	Send(to NodeID, msg RPCMessage) error
-	Recv() <-chan RPCMessage
+	Register(id NodeID, handler func(RPCMessage))
 }
 
-type LogEntry struct{
-	Term int
-	Index int
+type LogEntry struct {
+	Term    int
+	Index   int
 	Command []byte
 }
 
-type PersistentState struct{
+type PersistentState struct {
 	CurrentTerm int
-	VotedFor NodeID
+	VotedFor    NodeID
 }
 
-type Storage interface{
+type Storage interface {
 	AppendLog(entries []LogEntry) error
 	ReadLog(fromIndex int) ([]LogEntry, error)
 	LastLogIndex() (int, error)
@@ -43,6 +44,6 @@ type Storage interface{
 	LoadState() (PersistentState, error)
 }
 
-type RNG interface{
+type RNG interface {
 	Intn(n int) int
 }
