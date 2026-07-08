@@ -3,6 +3,8 @@ import "time"
 type RequestVoteArgs struct {
 	Term        int
 	CandidateID NodeID
+	LastLogIndex int
+	LastLogTerm int
 }
 
 type RequestVoteReply struct {
@@ -25,6 +27,8 @@ func (n *Node) StartElection() {
 		args := RequestVoteArgs{
 			Term:        n.CurrentTerm,
 			CandidateID: n.NodeID,
+			LastLogIndex: n.LastLogIndex(),
+			LastLogTerm: n.LastLogTerm(),
 		}
 		msg := RPCMessage{
 			Type:    "RequestVote",
@@ -50,7 +54,10 @@ func (n *Node) handleRequestVote(args RequestVoteArgs) RequestVoteReply {
 			VotedFor:    n.VotedFor,
 		})
 	}
-	if args.Term == n.CurrentTerm && (n.VotedFor == "" || n.VotedFor == args.CandidateID) {
+	logOK := args.LastLogTerm > n.LastLogTerm() ||
+	(args.LastLogTerm == n.LastLogTerm() && args.LastLogIndex >= n.LastLogIndex())
+
+	if args.Term == n.CurrentTerm && (n.VotedFor == "" || n.VotedFor == args.CandidateID) && logOK {
 		reply.VoteGranted = true
 		n.VotedFor = args.CandidateID
 		n.Storage.SaveState(PersistentState{
