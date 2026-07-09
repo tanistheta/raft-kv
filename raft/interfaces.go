@@ -47,3 +47,7 @@ type Storage interface {
 type RNG interface {
 	Intn(n int) int
 }
+
+type StateMachine interface {
+	Apply(command []byte) error
+}

@@ -61,6 +61,7 @@ func (n *Node) handleAppendEntries(args AppendEntriesArgs) AppendEntriesReply {
 
 	if args.LeaderCommit > n.CommitIndex {
 		n.CommitIndex = min(args.LeaderCommit, n.LastLogIndex())
+		n.applyCommitted()
 	}
 
 	reply.Success = true
@@ -81,10 +82,10 @@ func (n *Node) sendAppendEntries(peerID NodeID) {
 
 	var entries []LogEntry
 	if nextIdx <= n.LastLogIndex() {
-    src := n.Log[nextIdx-1:]
-	entries = make([]LogEntry, len(src))
-	copy(entries, src)	
-    }
+		src := n.Log[nextIdx-1:]
+		entries = make([]LogEntry, len(src))
+		copy(entries, src)
+	}
 
 	args := AppendEntriesArgs{
 		Term:         n.CurrentTerm,
@@ -147,6 +148,7 @@ func (n *Node) advanceCommitIndex() {
 		}
 		if count >= (len(n.Peers)+1)/2+1 {
 			n.CommitIndex = idx
+			n.applyCommitted()
 			break
 		}
 	}

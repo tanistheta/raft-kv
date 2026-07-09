@@ -1,4 +1,4 @@
-﻿package raft
+package raft
 
 type Role string
 
@@ -17,9 +17,11 @@ type Node struct {
 	VotesReceived int
 	Peers         []NodeID
 
-	CommitIndex int
-	NextIndex map[NodeID]int
-	MatchIndex map[NodeID]int
+	CommitIndex  int
+	LastApplied  int
+	NextIndex    map[NodeID]int
+	MatchIndex   map[NodeID]int
+	StateMachine StateMachine
 
 	timerGen int
 
