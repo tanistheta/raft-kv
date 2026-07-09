@@ -17,6 +17,10 @@ type Node struct {
 	VotesReceived int
 	Peers         []NodeID
 
+	CommitIndex int
+	NextIndex map[NodeID]int
+	MatchIndex map[NodeID]int
+
 	timerGen int
 
 	Clock   Clock

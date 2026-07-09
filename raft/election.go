@@ -86,7 +86,13 @@ func (n *Node) handleRequestVoteReply(reply RequestVoteReply) {
 		n.VotesReceived++
 		if n.VotesReceived >= (len(n.Peers)+1)/2+1 {
 			n.Role = Leader
-			n.runAsLeader()
+			n.NextIndex = make(map[NodeID]int)
+		    n.MatchIndex = make(map[NodeID]int)
+		    for _, p := range n.Peers {
+			    n.NextIndex[p] = n.LastLogIndex() + 1
+			    n.MatchIndex[p] = 0
+		}
+		n.runAsLeader()
 		}
 	}
 }
