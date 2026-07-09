@@ -81,8 +81,10 @@ func (n *Node) sendAppendEntries(peerID NodeID) {
 
 	var entries []LogEntry
 	if nextIdx <= n.LastLogIndex() {
-		entries = n.Log[nextIdx-1:]
-	}
+    src := n.Log[nextIdx-1:]
+	entries = make([]LogEntry, len(src))
+	copy(entries, src)	
+    }
 
 	args := AppendEntriesArgs{
 		Term:         n.CurrentTerm,
