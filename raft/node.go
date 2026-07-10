@@ -24,6 +24,7 @@ type Node struct {
 	StateMachine StateMachine
 
 	timerGen int
+	Stopped  bool
 
 	Clock   Clock
 	Network Network
@@ -31,7 +32,12 @@ type Node struct {
 	RNG     RNG
 }
 
+func (n *Node) Stop() {
+	n.Stopped = true
+}
+
 func (n *Node) Start() {
+	n.loadFromStorage()
 	n.Network.Register(n.NodeID, n.HandleMessage)
 	n.resetElectionTimer()
 }
@@ -40,7 +46,7 @@ func (n *Node) resetElectionTimer() {
 	n.timerGen++
 	myGen := n.timerGen
 	n.Clock.AfterFunc(n.electionTimeout(), func() {
-		if myGen == n.timerGen && n.Role != Leader {
+		if myGen == n.timerGen && n.Role != Leader && !n.Stopped {
 			n.StartElection()
 		}
 	})

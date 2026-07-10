@@ -30,4 +30,20 @@ func (n *Node) GetLogEntry(index int) (LogEntry, error) {
 func (n *Node) AppendLogEntry(entry LogEntry) {
 	entry.Index = len(n.Log) + 1
 	n.Log = append(n.Log, entry)
+	if n.Storage != nil {
+		n.Storage.AppendLog([]LogEntry{entry})
+	}
+}
+
+func (n *Node) loadFromStorage() {
+	if n.Storage == nil {
+		return
+	}
+	if state, err := n.Storage.LoadState(); err == nil {
+		n.CurrentTerm = state.CurrentTerm
+		n.VotedFor = state.VotedFor
+	}
+	if entries, err := n.Storage.ReadLog(1); err == nil && len(entries) > 0 {
+		n.Log = entries
+	}
 }

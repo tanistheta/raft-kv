@@ -1,10 +1,12 @@
-﻿package raft
+package raft
+
 import "time"
+
 type RequestVoteArgs struct {
-	Term        int
-	CandidateID NodeID
+	Term         int
+	CandidateID  NodeID
 	LastLogIndex int
-	LastLogTerm int
+	LastLogTerm  int
 }
 
 type RequestVoteReply struct {
@@ -25,10 +27,10 @@ func (n *Node) StartElection() {
 
 	for _, peerID := range n.Peers {
 		args := RequestVoteArgs{
-			Term:        n.CurrentTerm,
-			CandidateID: n.NodeID,
+			Term:         n.CurrentTerm,
+			CandidateID:  n.NodeID,
 			LastLogIndex: n.LastLogIndex(),
-			LastLogTerm: n.LastLogTerm(),
+			LastLogTerm:  n.LastLogTerm(),
 		}
 		msg := RPCMessage{
 			Type:    "RequestVote",
@@ -55,7 +57,7 @@ func (n *Node) handleRequestVote(args RequestVoteArgs) RequestVoteReply {
 		})
 	}
 	logOK := args.LastLogTerm > n.LastLogTerm() ||
-	(args.LastLogTerm == n.LastLogTerm() && args.LastLogIndex >= n.LastLogIndex())
+		(args.LastLogTerm == n.LastLogTerm() && args.LastLogIndex >= n.LastLogIndex())
 
 	if args.Term == n.CurrentTerm && (n.VotedFor == "" || n.VotedFor == args.CandidateID) && logOK {
 		reply.VoteGranted = true
@@ -87,12 +89,12 @@ func (n *Node) handleRequestVoteReply(reply RequestVoteReply) {
 		if n.VotesReceived >= (len(n.Peers)+1)/2+1 {
 			n.Role = Leader
 			n.NextIndex = make(map[NodeID]int)
-		    n.MatchIndex = make(map[NodeID]int)
-		    for _, p := range n.Peers {
-			    n.NextIndex[p] = n.LastLogIndex() + 1
-			    n.MatchIndex[p] = 0
-		}
-		n.runAsLeader()
+			n.MatchIndex = make(map[NodeID]int)
+			for _, p := range n.Peers {
+				n.NextIndex[p] = n.LastLogIndex() + 1
+				n.MatchIndex[p] = 0
+			}
+			n.runAsLeader()
 		}
 	}
 }
@@ -104,7 +106,7 @@ func (n *Node) electionTimeout() time.Duration {
 }
 
 func (n *Node) runAsLeader() {
-	if n.Role != Leader {
+	if n.Role != Leader || n.Stopped {
 		return
 	}
 	n.sendHeartbeat()

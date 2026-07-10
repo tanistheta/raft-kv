@@ -28,6 +28,10 @@ func (n *Node) handleAppendEntries(args AppendEntriesArgs) AppendEntriesReply {
 	if args.Term > n.CurrentTerm {
 		n.CurrentTerm = args.Term
 		n.VotedFor = ""
+		n.Storage.SaveState(PersistentState{
+			CurrentTerm: n.CurrentTerm,
+			VotedFor:    n.VotedFor,
+		})
 	}
 	n.Role = Follower
 	n.resetElectionTimer()
@@ -52,10 +56,19 @@ func (n *Node) handleAppendEntries(args AppendEntriesArgs) AppendEntriesReply {
 			existing := n.Log[idx-1]
 			if existing.Term != e.Term {
 				n.Log = n.Log[:idx-1]
+				if n.Storage != nil {
+					n.Storage.TruncateLog(idx)
+				}
 				n.Log = append(n.Log, e)
+				if n.Storage != nil {
+					n.Storage.AppendLog([]LogEntry{e})
+				}
 			}
 		} else {
 			n.Log = append(n.Log, e)
+			if n.Storage != nil {
+				n.Storage.AppendLog([]LogEntry{e})
+			}
 		}
 	}
 
@@ -113,6 +126,10 @@ func (n *Node) handleAppendEntriesReply(reply AppendEntriesReply) {
 		n.CurrentTerm = reply.Term
 		n.Role = Follower
 		n.VotedFor = ""
+		n.Storage.SaveState(PersistentState{
+			CurrentTerm: n.CurrentTerm,
+			VotedFor:    n.VotedFor,
+		})
 		return
 	}
 	if n.Role != Leader {
