@@ -1,9 +1,15 @@
 package kv
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
+)
+
+var (
+	ErrKeyNotFound = errors.New("key not found")
+	ErrCASMismatch = errors.New("cas mismatch")
 )
 
 type StateMachine struct {
@@ -39,6 +45,19 @@ func (s *StateMachine) Apply(command []byte) error {
 			return fmt.Errorf("malformed DELETE command: %q", command)
 		}
 		delete(s.data, parts[1])
+	case "CAS":
+		if len(parts) != 4 {
+			return fmt.Errorf("malformed CAS command: %q", command)
+		}
+		key, from, to := parts[1], parts[2], parts[3]
+		current, ok := s.data[key]
+		if !ok {
+			return fmt.Errorf("cas %q: %w", key, ErrKeyNotFound)
+		}
+		if current != from {
+			return fmt.Errorf("cas %q: %w", key, ErrCASMismatch)
+		}
+		s.data[key] = to
 	default:
 		return fmt.Errorf("unknown command: %q", command)
 	}
