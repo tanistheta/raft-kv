@@ -6,3 +6,6 @@ raft-kv
 
 .data/
 maelstrom-node
+
+store/
+raft-project-final-workflow.md.pdf
