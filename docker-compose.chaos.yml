@@ -34,6 +34,7 @@ services:
     # even though the proxies themselves (n1-raft etc.) already bind
     # 0.0.0.0 correctly by default.
     command: ["-host=0.0.0.0", "-config=/etc/toxiproxy.json"]
+    restart: unless-stopped
     volumes:
       - ./toxiproxy.json:/etc/toxiproxy.json:ro
     ports:

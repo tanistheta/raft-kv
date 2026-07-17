@@ -29,6 +29,7 @@ services:
   n1:
     <<: *node-image
     hostname: n1
+    restart: unless-stopped
     command: ["-id=n1", "-data-dir=/data", *peer-n1, *peer-n2, *peer-n3]
     volumes:
       - n1-data:/data
@@ -39,6 +40,7 @@ services:
   n2:
     <<: *node-image
     hostname: n2
+    restart: unless-stopped
     command: ["-id=n2", "-data-dir=/data", *peer-n1, *peer-n2, *peer-n3]
     volumes:
       - n2-data:/data
@@ -49,6 +51,7 @@ services:
   n3:
     <<: *node-image
     hostname: n3
+    restart: unless-stopped
     command: ["-id=n3", "-data-dir=/data", *peer-n1, *peer-n2, *peer-n3]
     volumes:
       - n3-data:/data
