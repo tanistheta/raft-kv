@@ -22,6 +22,7 @@ service ClientAPI {
   rpc Put(PutRequest) returns (PutReply);
   rpc Delete(DeleteRequest) returns (DeleteReply);
   rpc Cas(CasRequest) returns (CasReply);
+  rpc Status(StatusRequest) returns (StatusReply);
 }
 
 // Status carries every outcome a client needs to distinguish. Modeled as
@@ -94,4 +95,26 @@ message CasReply {
   Status status = 1;
   string leader_hint = 2;
   string served_by = 3;
+}
+
+// StatusRequest/StatusReply exist purely for external observability (the
+// dashboard's polling loop) - no client_api.go RPC handler treats a peer's
+// Status reply as authoritative for anything raft-internal. Every field
+// is a direct, unguarded snapshot of raft.Node state at the moment the
+// call is handled; unlike Get/Put/Delete/Cas there's no leader-forwarding
+// or freshness check, since a stale or non-leader's view of its own state
+// is exactly what "is this node up, and what does it currently think is
+// true" needs to show.
+message StatusRequest {}
+
+message StatusReply {
+  string node_id = 1;
+  // One of "FOLLOWER", "CANDIDATE", "LEADER" - raft.Role's string values,
+  // passed through unchanged rather than re-encoded as an enum, so the
+  // dashboard's JS doesn't need a second copy of raft/node.go's role names.
+  string role = 2;
+  int64 term = 3;
+  string leader_id = 4;
+  int64 commit_index = 5;
+  int64 last_log_index = 6;
 }

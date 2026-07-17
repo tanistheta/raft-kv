@@ -205,6 +205,25 @@ func (a *ClientAPI) Cas(ctx context.Context, req *raftrpc.CasRequest) (*raftrpc.
 	return &raftrpc.CasReply{Status: statusForApplyErr(status, applyErr), ServedBy: string(a.raftNode.NodeID)}, nil
 }
 
+// Status reports this node's raft state as-is, with no leader-forwarding
+// and no freshness check - see client.proto's doc comment on why that's
+// correct here even though every other RPC on this type forwards. A
+// dashboard polling all three nodes needs each one's own honest view,
+// including a stale follower's, not a single cluster-wide answer.
+func (a *ClientAPI) Status(ctx context.Context, req *raftrpc.StatusRequest) (*raftrpc.StatusReply, error) {
+	a.nodeMu.Lock()
+	defer a.nodeMu.Unlock()
+
+	return &raftrpc.StatusReply{
+		NodeId:       string(a.raftNode.NodeID),
+		Role:         string(a.raftNode.Role),
+		Term:         int64(a.raftNode.CurrentTerm),
+		LeaderId:     string(a.raftNode.LeaderID),
+		CommitIndex:  int64(a.raftNode.CommitIndex),
+		LastLogIndex: int64(a.raftNode.LastLogIndex()),
+	}, nil
+}
+
 // proposeAndWait appends command to the log if this node is currently
 // leader, then blocks (polling kv.ResolveIndex, same function
 // maelstrom/client.go and sim/workload.go both already use) until it's

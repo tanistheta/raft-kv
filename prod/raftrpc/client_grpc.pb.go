@@ -23,6 +23,7 @@ const (
 	ClientAPI_Put_FullMethodName    = "/raftrpc.ClientAPI/Put"
 	ClientAPI_Delete_FullMethodName = "/raftrpc.ClientAPI/Delete"
 	ClientAPI_Cas_FullMethodName    = "/raftrpc.ClientAPI/Cas"
+	ClientAPI_Status_FullMethodName = "/raftrpc.ClientAPI/Status"
 )
 
 // ClientAPIClient is the client API for ClientAPI service.
@@ -47,6 +48,7 @@ type ClientAPIClient interface {
 	Put(ctx context.Context, in *PutRequest, opts ...grpc.CallOption) (*PutReply, error)
 	Delete(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*DeleteReply, error)
 	Cas(ctx context.Context, in *CasRequest, opts ...grpc.CallOption) (*CasReply, error)
+	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusReply, error)
 }
 
 type clientAPIClient struct {
@@ -97,6 +99,16 @@ func (c *clientAPIClient) Cas(ctx context.Context, in *CasRequest, opts ...grpc.
 	return out, nil
 }
 
+func (c *clientAPIClient) Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (*StatusReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StatusReply)
+	err := c.cc.Invoke(ctx, ClientAPI_Status_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ClientAPIServer is the server API for ClientAPI service.
 // All implementations must embed UnimplementedClientAPIServer
 // for forward compatibility.
@@ -119,6 +131,7 @@ type ClientAPIServer interface {
 	Put(context.Context, *PutRequest) (*PutReply, error)
 	Delete(context.Context, *DeleteRequest) (*DeleteReply, error)
 	Cas(context.Context, *CasRequest) (*CasReply, error)
+	Status(context.Context, *StatusRequest) (*StatusReply, error)
 	mustEmbedUnimplementedClientAPIServer()
 }
 
@@ -140,6 +153,9 @@ func (UnimplementedClientAPIServer) Delete(context.Context, *DeleteRequest) (*De
 }
 func (UnimplementedClientAPIServer) Cas(context.Context, *CasRequest) (*CasReply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Cas not implemented")
+}
+func (UnimplementedClientAPIServer) Status(context.Context, *StatusRequest) (*StatusReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Status not implemented")
 }
 func (UnimplementedClientAPIServer) mustEmbedUnimplementedClientAPIServer() {}
 func (UnimplementedClientAPIServer) testEmbeddedByValue()                   {}
@@ -234,6 +250,24 @@ func _ClientAPI_Cas_Handler(srv interface{}, ctx context.Context, dec func(inter
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ClientAPI_Status_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClientAPIServer).Status(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ClientAPI_Status_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClientAPIServer).Status(ctx, req.(*StatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ClientAPI_ServiceDesc is the grpc.ServiceDesc for ClientAPI service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -256,6 +290,10 @@ var ClientAPI_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Cas",
 			Handler:    _ClientAPI_Cas_Handler,
+		},
+		{
+			MethodName: "Status",
+			Handler:    _ClientAPI_Status_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
