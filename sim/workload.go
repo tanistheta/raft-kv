@@ -97,24 +97,16 @@ func (w *Workload) resolvePending() {
 	_, leader := w.leader()
 	var still []*pendingWrite
 	for _, p := range w.pending {
-		if leader == nil || leader.LastLogIndex() < p.index {
+		switch kv.ResolveIndex(leader, p.index, p.term) {
+		case kv.StillPending:
 			still = append(still, p)
-			continue
-		}
-		entry, err := leader.GetLogEntry(p.index)
-		if err != nil {
-			still = append(still, p)
-			continue
-		}
-		if entry.Term != p.term {
-			continue
-		}
-		if leader.CommitIndex >= p.index {
+		case kv.Superseded:
+			// lost out to a different leader's entry - drop it,
+			// same as before.
+		case kv.Committed:
 			p.op.End = int64(w.Scheduler.Now().UnixNano())
 			w.History = append(w.History, p.op)
-			continue
 		}
-		still = append(still, p)
 	}
 	w.pending = still
 }

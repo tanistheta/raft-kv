@@ -90,6 +90,14 @@ type testNode struct {
 	raftNode  *raft.Node
 	store     *kv.StateMachine
 	router    *Router
+
+	// in is the read end of this node's stdin pipe. transport.Run() blocks
+	// reading from it on its own goroutine; closing it in Cleanup is what
+	// unblocks that Read and lets Run() return, instead of leaking the
+	// goroutine past the end of the test the way raftNode.Stop() alone
+	// does (Stop only halts Raft logic - it does nothing to a goroutine
+	// parked in a blocking Read).
+	in *io.PipeReader
 }
 
 func newTestCluster(t *testing.T, ids []string) (map[string]*testNode, *bus) {
@@ -113,7 +121,7 @@ func newTestCluster(t *testing.T, ids []string) (map[string]*testNode, *bus) {
 		}
 
 		store := kv.NewStateMachine()
-		tracker := newResultTracker(store)
+		tracker := kv.NewResultTracker(store)
 		network := NewNetworkAdapter(transport)
 
 		raftNode := &raft.Node{
@@ -128,7 +136,7 @@ func newTestCluster(t *testing.T, ids []string) (map[string]*testNode, *bus) {
 		client := NewClientHandler(transport, raftNode, store, tracker)
 		router := NewRouter(transport, network, client, mu)
 
-		nodes[id] = &testNode{id: raft.NodeID(id), mu: mu, transport: transport, raftNode: raftNode, store: store, router: router}
+		nodes[id] = &testNode{id: raft.NodeID(id), mu: mu, transport: transport, raftNode: raftNode, store: store, router: router, in: pr}
 	}
 
 	for _, n := range nodes {
@@ -143,6 +151,7 @@ func newTestCluster(t *testing.T, ids []string) (map[string]*testNode, *bus) {
 			n.mu.Lock()
 			n.raftNode.Stop()
 			n.mu.Unlock()
+			n.in.Close()
 		}
 	})
 
@@ -235,15 +244,18 @@ func TestClusterServesWriteReadCASOverMaelstromTransport(t *testing.T) {
 	}
 
 	// Give replication a moment, then confirm all three replicas agree -
-	// the whole point of routing writes through consensus.
+	// the whole point of routing writes through consensus. store.Get takes
+	// the same JSON-compact token canonicalToken produces (quotes and
+	// all), since that's what ClientHandler now writes through the log -
+	// see canonicalToken's doc comment in client.go.
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		allMatch := true
 		for _, n := range nodes {
 			n.mu.Lock()
-			val, ok := n.store.Get("x")
+			val, ok := n.store.Get(`"x"`)
 			n.mu.Unlock()
-			if !ok || val != "2" {
+			if !ok || val != `"2"` {
 				allMatch = false
 			}
 		}
@@ -253,7 +265,7 @@ func TestClusterServesWriteReadCASOverMaelstromTransport(t *testing.T) {
 		if time.Now().After(deadline) {
 			for _, n := range nodes {
 				n.mu.Lock()
-				val, ok := n.store.Get("x")
+				val, ok := n.store.Get(`"x"`)
 				n.mu.Unlock()
 				t.Errorf("node %s store[x] = %q, %v", n.id, val, ok)
 			}

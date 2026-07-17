@@ -103,3 +103,67 @@ from the original term-1 leader and committed it ~200ms later.
 **conflicting** entry at that exact index (different term). A leader whose log simply
 hasn't reached that index yet leaves the write pending rather than abandoning it.
 (`sim/workload.go`)
+
+---
+
+## 2026-07-16 - Every client op silently dropped against real Maelstrom (string-typed key/value)
+
+**Found via:** the first real `maelstrom test -w lin-kv --bin cmd/maelstrom` run, the DST
+harness can't surface this by construction since it never speaks real JSON off a real
+process's stdin.
+
+**Symptom:** Every single client operation in the run timed out (`:net-timeout`), and the
+run failed analysis outright - not a linearizability violation, but total unavailability.
+`node-logs/*.log` (stderr) were empty: the process wasn't crashing, it just never replied.
+
+**Root cause:** `clientBody` in `maelstrom/client.go` declared `Key`, `Value`, `From`,
+`To` as Go `string` fields. Maelstrom's actual lin-kv generator sends integer keys and
+values (`{"type":"write","key":0,"value":4}`), not strings. `json.Unmarshal`-ing a JSON
+number into a Go `string` field fails, so `ClientHandler.Handle` returned `false` for
+every op without logging anything, and the message was silently dropped by the router.
+Nothing in the DST harness or the in-memory integration test exercises this path, since
+both construct Go values directly and never round-trip through real JSON with a real
+Maelstrom client.
+
+**Fix:** `clientBody`'s four fields are now `json.RawMessage`, and a new
+`canonicalToken` helper re-encodes whatever scalar arrives (number, string, bool, null)
+as compact JSON text before it's used as a `kv.StateMachine` key or folded into a
+`SET`/`CAS` command string. Reads echo the value back as raw JSON so a stored number
+comes back as a number, not a re-quoted string. (`maelstrom/client.go`)
+
+**Result after the fix:** `maelstrom test -w lin-kv` passes clean (`:valid? true`, no
+anomalies) against 3 and 5 node clusters, both with no nemesis and with `--nemesis
+partition` injecting real network partitions - see `docs/results.md` for the full
+numbers.
+
+---
+
+## 2026-07-16 - The 2000-seed stale-read sweep was never actually being run
+
+**Found via:** re-verifying everything with a full test run after the `kv/store.go`
+refactor, specifically noticing `go test -v ./...` never printed
+`TestStaleMinorityReadsStayLinearizable` in its output despite that test existing in the
+tree.
+
+**Symptom:** No symptom in the traditional sense - `go build`, `go vet`, and `go test
+./...` all passed clean, every time, for as long as this file existed. That's exactly
+what made this easy to miss: nothing was red.
+
+**Root cause:** The file was named `sim/staleread_sweeptest.go` - missing the
+underscore before `test.go`. Go's test tooling only treats a file as a test file if its
+name ends in exactly `_test.go`; `sweeptest.go` doesn't match, so the file compiled as
+ordinary `sim` package code (its `TestStaleMinorityReadsStayLinearizable` function is a
+perfectly valid, exported, unused function; nothing about that is a compile error) and
+`go test` never ran it, silently, since whenever the underscore was dropped. The
+documented "112 stale minority reads across 2000 seeds, zero violations" figure had
+never been mechanically re-verified since.
+
+**Fix:** renamed the file to `sim/staleread_sweep_test.go`. Ran it for the first time as
+an actual test: same result as documented, 112 stale-minority reads across 2000 seeds,
+zero violations among them. The number was correct; the process that was supposed to
+keep re-checking it had quietly stopped working.
+
+**Lesson, not just a fix:** a test suite passing green doesn't mean every test in the
+tree ran - it means every test file `go test` recognized ran. Worth periodically
+checking `go test -v ./... | grep RUN` against what actually exists in `*_test.go` files
+if a claimed number matters.

@@ -33,6 +33,16 @@ type Node struct {
 
 	Handler func(msg Message)
 
+	// OnInit, if set, runs once init has populated NodeID/NodeIDs above and
+	// before this node's init_ok reply goes out. It exists because whoever
+	// actually builds the raft.Node (peers, storage, etc.) can't do so
+	// until NodeID/NodeIDs are known, but Run's loop only learns them
+	// mid-stream from Maelstrom's first message - see RunProcess in
+	// process.go, the real caller. Returning an error aborts Run without
+	// replying, so Maelstrom sees a missing init_ok rather than a node
+	// that claims to be ready but isn't actually wired up.
+	OnInit func(nodeID string, nodeIDs []string) error
+
 	in    io.Reader
 	out   *bufio.Writer
 	outMu sync.Mutex
@@ -132,5 +142,10 @@ func (n *Node) handleInit(msg Message) error {
 	}
 	n.NodeID = body.NodeID
 	n.NodeIDs = body.NodeIDs
+	if n.OnInit != nil {
+		if err := n.OnInit(n.NodeID, n.NodeIDs); err != nil {
+			return fmt.Errorf("OnInit: %w", err)
+		}
+	}
 	return n.Reply(msg, map[string]any{"type": "init_ok"})
 }
