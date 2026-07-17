@@ -1,0 +1,71 @@
+version: "3.9"
+
+# Every node listens on the same internal ports (9001 raft, 9101 client) -
+# containers don't share a network namespace, so there's no collision,
+# and it means every node's -peer list is identical apart from which
+# entry is "self" (matched via -id), the same "hand every container the
+# same config" property cmd/node/main.go's doc comment calls out. Host
+# access (for cmd/smoketest, or just poking at the cluster manually) goes
+# through a distinct host port per node instead, mapped below.
+x-node-image: &node-image
+  build:
+    context: .
+    dockerfile: Dockerfile
+
+# Anchored individually, not as one list under a single anchor: a YAML
+# alias to a sequence doesn't splice/flatten into a surrounding sequence
+# literal - `*peers` inside `command: [...]` inserts the whole aliased
+# list as one nested element instead of three separate strings, which is
+# exactly what "services.n1.command.2 must be a string" was complaining
+# about. Anchoring each flag as its own scalar and listing all three
+# aliases in each service's command avoids that: each alias resolves to
+# a plain string in that position, same three lines still shared instead
+# of duplicated as literal text.
+x-peer-n1: &peer-n1 "-peer=n1=n1:9001=n1:9101"
+x-peer-n2: &peer-n2 "-peer=n2=n2:9001=n2:9101"
+x-peer-n3: &peer-n3 "-peer=n3=n3:9001=n3:9101"
+
+services:
+  n1:
+    <<: *node-image
+    hostname: n1
+    command: ["-id=n1", "-data-dir=/data", *peer-n1, *peer-n2, *peer-n3]
+    volumes:
+      - n1-data:/data
+    ports:
+      - "9101:9101" # host:container - client API only; raft port (9001) stays internal
+    networks: [raftnet]
+
+  n2:
+    <<: *node-image
+    hostname: n2
+    command: ["-id=n2", "-data-dir=/data", *peer-n1, *peer-n2, *peer-n3]
+    volumes:
+      - n2-data:/data
+    ports:
+      - "9102:9101"
+    networks: [raftnet]
+
+  n3:
+    <<: *node-image
+    hostname: n3
+    command: ["-id=n3", "-data-dir=/data", *peer-n1, *peer-n2, *peer-n3]
+    volumes:
+      - n3-data:/data
+    ports:
+      - "9103:9101"
+    networks: [raftnet]
+
+networks:
+  raftnet: {}
+
+# Named (not bind-mount) volumes: Phase 4G's exit criterion is "kill a
+# container, cluster re-elects, no data loss" - a named volume survives
+# `docker compose stop`/`start` and even container recreation as long as
+# the volume itself isn't removed (`docker compose down -v` would destroy
+# it; plain `down`/`up` or `restart` won't), which is exactly the
+# persistence guarantee that test needs.
+volumes:
+  n1-data:
+  n2-data:
+  n3-data:

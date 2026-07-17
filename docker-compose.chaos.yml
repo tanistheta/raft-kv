@@ -1,0 +1,58 @@
+version: "3.9"
+
+# Applied on top of docker-compose.yml, never replacing it:
+#   docker compose -f docker-compose.yml -f docker-compose.chaos.yml up --build
+# The base file stays provably standalone (Piece E's already-verified
+# setup); this file only adds a toxiproxy service and re-points n1/n2/n3's
+# raft addresses through it. Client traffic (port 9101) is left alone -
+# chaos here is scoped to raft-to-raft traffic, which is what election and
+# replication actually run over. A "kill a container" demo doesn't need
+# toxiproxy at all (that's just `docker kill n2`, no proxy required); this
+# file is for injecting network-level faults - latency, partition, packet
+# loss - between specific nodes without killing anything.
+#
+# Known limitation: one proxy per node's raft port, not one per node PAIR.
+# That gives whole-node isolation (cut n2 off from both n1 and n3 at once)
+# but not an asymmetric single-link partition (sever n1<->n2 while
+# n1<->n3 stays healthy). A 3-node cluster's interesting Raft scenarios -
+# losing quorum, a node missing an election, a partitioned leader getting
+# deposed - are all reachable with whole-node isolation; a full pairwise
+# mesh would be 6 proxies for marginal extra coverage on a 3-node cluster.
+
+x-chaos-peer-n1: &chaos-peer-n1 "-peer=n1=toxiproxy:9001=n1:9101"
+x-chaos-peer-n2: &chaos-peer-n2 "-peer=n2=toxiproxy:9002=n2:9101"
+x-chaos-peer-n3: &chaos-peer-n3 "-peer=n3=toxiproxy:9003=n3:9101"
+
+services:
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    # -host defaults to "localhost" in toxiproxy-server itself (confirmed
+    # in its own source, cmd/server/server.go) - without this override the
+    # control API is only reachable from inside the toxiproxy container's
+    # own loopback, meaning neither toxiproxy-cli from another container
+    # nor the "8474:8474" host port mapping below can actually reach it,
+    # even though the proxies themselves (n1-raft etc.) already bind
+    # 0.0.0.0 correctly by default.
+    command: ["-host=0.0.0.0", "-config=/etc/toxiproxy.json"]
+    volumes:
+      - ./toxiproxy.json:/etc/toxiproxy.json:ro
+    ports:
+      - "8474:8474" # control API - toxiproxy-cli/HTTP from the host targets this
+    networks: [raftnet]
+
+  # command is fully replaced (not merged) by an override file, so each
+  # service restates its complete command line: same -id/-data-dir as the
+  # base file, plus -raft-listen (this node's real address - see
+  # cmd/node/main.go's doc comment on why that's now needed) and the
+  # toxiproxy-routed peer list above instead of direct hostnames.
+  n1:
+    command: ["-id=n1", "-data-dir=/data", "-raft-listen=n1:9001", *chaos-peer-n1, *chaos-peer-n2, *chaos-peer-n3]
+    depends_on: [toxiproxy]
+
+  n2:
+    command: ["-id=n2", "-data-dir=/data", "-raft-listen=n2:9001", *chaos-peer-n1, *chaos-peer-n2, *chaos-peer-n3]
+    depends_on: [toxiproxy]
+
+  n3:
+    command: ["-id=n3", "-data-dir=/data", "-raft-listen=n3:9001", *chaos-peer-n1, *chaos-peer-n2, *chaos-peer-n3]
+    depends_on: [toxiproxy]

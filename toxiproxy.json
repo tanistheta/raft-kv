@@ -1,0 +1,20 @@
+[
+  {
+    "name": "n1-raft",
+    "listen": "0.0.0.0:9001",
+    "upstream": "n1:9001",
+    "enabled": true
+  },
+  {
+    "name": "n2-raft",
+    "listen": "0.0.0.0:9002",
+    "upstream": "n2:9001",
+    "enabled": true
+  },
+  {
+    "name": "n3-raft",
+    "listen": "0.0.0.0:9003",
+    "upstream": "n3:9001",
+    "enabled": true
+  }
+]
