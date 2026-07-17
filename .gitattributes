@@ -1,0 +1,10 @@
+# Normalize everything to LF in the repo; git still checks files out using
+# core.autocrlf on Windows, but storing them as LF stops every edit from
+# showing a "LF will be replaced by CRLF" warning and keeps diffs clean
+# regardless of which OS made the change.
+* text=auto eol=lf
+
+*.go text eol=lf
+*.md text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf

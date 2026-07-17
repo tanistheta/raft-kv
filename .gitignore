@@ -3,3 +3,6 @@ raft-kv
 *.exe
 .vscode/
 .idea/
+
+.data/
+maelstrom-node
