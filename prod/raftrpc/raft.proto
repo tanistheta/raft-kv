@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package raftrpc;
+
+option go_package = "raft-kv/prod/raftrpc";
+
+// RaftTransport is deliberately one fire-and-forget method, not one RPC per
+// Raft message type (RequestVote, AppendEntries, ...). raft.Network's own
+// contract (raft/interfaces.go) is asymmetric: Send delivers a message and
+// returns only an error, never a reply value - a RequestVote's reply comes
+// back later as an independent RequestVoteReply message sent the other
+// direction (raft/node.go's HandleMessage does this explicitly). Modeling
+// this RPC as synchronous request/response would fight that contract
+// instead of implementing it; Envelope.type plus a shared decode-by-type
+// step (grpc_transport.go, mirroring maelstrom/network.go's
+// decodeRPCPayload) is what actually matches how every other transport in
+// this repo (sim.Network, maelstrom.NetworkAdapter) already works.
+service RaftTransport {
+  rpc Send(Envelope) returns (Ack);
+}
+
+// Envelope carries one raft.RPCMessage. payload is the JSON encoding of
+// whichever concrete Go struct (RequestVoteArgs, AppendEntriesReply, etc.)
+// `type` says it is - JSON here rather than a protobuf oneof so the wire
+// encoding of a Raft RPC's payload is identical across all three
+// transports (sim, Maelstrom, gRPC) this repo has; only the delivery
+// mechanism changes. If Payload's structure ever needs stronger schema
+// guarantees than that, a oneof of dedicated messages here is the natural
+// upgrade path, and it's isolated to this one file.
+message Envelope {
+  string type = 1;
+  string from = 2;
+  string to = 3;
+  int64 term = 4;
+  bytes payload = 5;
+}
+
+message Ack {}

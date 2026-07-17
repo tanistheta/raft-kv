@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package raftrpc;
+
+option go_package = "raft-kv/prod/raftrpc";
+
+// ClientAPI is the external, application-facing service - separate from
+// RaftTransport (raft.proto), which is peer-to-peer only. A real client
+// (or the Docker Compose cluster's demo tooling) talks to ClientAPI; nodes
+// talk to each other over RaftTransport, including when ClientAPI itself
+// forwards a request from a follower to the current leader (see
+// client_api.go's forwardToLeader, which is just a ClientAPIClient dialed
+// against LeaderID's address like any other caller).
+//
+// One RPC per kv/statemachine.go command, rather than a single generic
+// "Execute" - callers get typed requests/replies instead of having to
+// build the SET/CAS/DELETE command string themselves, and each RPC's
+// not-leader/no-leader/timeout failure modes are identical by construction
+// since they all funnel through the same client_api.go helpers.
+service ClientAPI {
+  rpc Get(GetRequest) returns (GetReply);
+  rpc Put(PutRequest) returns (PutReply);
+  rpc Delete(DeleteRequest) returns (DeleteReply);
+  rpc Cas(CasRequest) returns (CasReply);
+}
+
+// Status carries every outcome a client needs to distinguish. Modeled as
+// an explicit enum on every reply, rather than gRPC status codes alone,
+// because NOT_LEADER and NO_LEADER need to carry extra structured data
+// (leader_hint) that a bare status code can't - a caller not using this
+// client library (e.g. a debugging tool) can still make sense of the
+// reply without decoding gRPC status details.
+enum Status {
+  OK = 0;
+  NOT_LEADER = 1;       // leader_hint set if this node knows who is
+  NO_LEADER = 2;         // this node has no leader to forward to right now
+  KEY_NOT_FOUND = 3;
+  CAS_MISMATCH = 4;
+  TIMEOUT = 5;           // proposed but not decided within the deadline
+  UNAVAILABLE = 6;        // forward attempt itself failed (leader unreachable)
+  // key/value/from/to contains whitespace or '=' - not representable in
+  // kv/statemachine.go's space-delimited "SET key=value" command format.
+  // Same restriction maelstrom/client.go's canonicalToken enforces on the
+  // Maelstrom side; kept here rather than fixed at the state-machine
+  // layer since changing the command encoding is a bigger, separate
+  // change with its own compatibility concerns for docs/maelstrom-artifacts.
+  INVALID_REQUEST = 7;
+}
+
+message GetRequest {
+  string key = 1;
+}
+
+message GetReply {
+  Status status = 1;
+  string value = 2;
+  string leader_hint = 3;
+  // NodeID of whichever node actually served this request - the leader
+  // that handled it, even if you called a follower and it was forwarded
+  // there transparently. Useful for exactly the case that motivated it:
+  // telling which node is leader from the outside without adding a
+  // separate status RPC.
+  string served_by = 4;
+}
+
+message PutRequest {
+  string key = 1;
+  string value = 2;
+}
+
+message PutReply {
+  Status status = 1;
+  string leader_hint = 2;
+  string served_by = 3;
+}
+
+message DeleteRequest {
+  string key = 1;
+}
+
+message DeleteReply {
+  Status status = 1;
+  string leader_hint = 2;
+  string served_by = 3;
+}
+
+message CasRequest {
+  string key = 1;
+  string from = 2;
+  string to = 3;
+}
+
+message CasReply {
+  Status status = 1;
+  string leader_hint = 2;
+  string served_by = 3;
+}
