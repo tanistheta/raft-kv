@@ -1,64 +1,46 @@
-﻿# raft-kv
+﻿# Maelstrom / Jepsen artifacts
 
-A from-scratch implementation of the [Raft consensus algorithm](https://raft.github.io/raft.pdf) in Go, built to actually understand distributed consensus by implementing it rather than just reading about it. The end goal is a replicated key-value store that stays consistent and available as long as a majority of nodes are up.
+Real output from `maelstrom test -w lin-kv` run against `cmd/maelstrom` on 2026-07-16.
+This is the archived evidence for Phase 3's exit criteria ("green `lin-kv` run under
+partitions, artifacts archived"), not just a terminal screenshot.
 
-## Status: Phase 2 complete (~44% overall)
+**Run parameters:** 5 nodes, 60 second time limit, request rate 15/s, concurrency 4n
+(20 client threads), `--nemesis partition --nemesis-interval 8` (a random network
+partition every 8 seconds throughout the run).
 
-| Phase | Description | Status |
-|---|---|---|
-| 1 | Leader election, heartbeats, term handling | Done |
-| 2 | Log replication (AppendEntries), apply loop, KV state machine | Done |
-| 3 | External validation via [Maelstrom](https://github.com/jepsen-io/maelstrom) | Next |
-| 4 | Snapshotting / log compaction | Planned |
-| 5 | Cluster membership changes | Planned |
+**Verdict:** `:valid? true`. 895 operations attempted (223 reads, 217 writes, 455 cas),
+136 succeeded, 754 failed cleanly (mostly `temporarily-unavailable` from requests
+routed to a non-leader node - expected, see `docs/results.md`), 5 came back
+indeterminate (`:info`, almost certainly requests in flight when a partition cut the
+connection - Jepsen's checker treats these conservatively rather than assuming
+either outcome). Zero linearizability violations across all of it, under real,
+adversarial, Maelstrom-injected network partitions.
 
-## What's implemented
+## Files
 
-- **Leader election**: randomized election timeouts, term-based voting, and split-vote handling
-- **Log replication**: the full `AppendEntries` RPC path, including log matching, conflict resolution, and commit index advancement
-- **Apply loop**: committed entries are applied in order to a replicated key-value state machine
-- **Deterministic Simulation Testing (DST)**: a custom simulation harness that runs the cluster under controlled network faults (delays, partitions, drops) with seeded randomness for reproducibility
+- **`results.edn`** - the actual machine-readable verdict Jepsen produced: per-operation
+  stats, the linearizability checker's output, availability numbers. This is the ground
+  truth; everything in `docs/results.md`'s Phase 3 table is read off a file like this one.
+- **`timeline.html`** - open in a browser. Jepsen's Lamport-diagram-style visualization
+  of every operation's invocation and completion, ordered by real time, colored by
+  outcome. This is the closest thing to actually watching the test run.
+- **`latency-quantiles.png`**, **`latency-raw.png`** - request latency over the run.
+  Visible latency spikes line up with the partition nemesis firing every 8s.
+- **`rate.png`** - operation throughput over time, same partition-correlated pattern.
 
-## Testing
+Not archived here (too large/noisy to be worth committing, but reproducible - see
+below): `jepsen.log` (~190KB full run log), `messages.svg` (~3.5MB full message-flow
+diagram), `net-journal/`, `node-logs/`, `history.edn`/`history.txt` (raw operation
+history Jepsen checked).
 
-The project leans on deterministic simulation testing rather than relying only on unit tests against real timers and sockets:
-
-- 9 unit and integration tests passing across election and replication logic
-- A 2000-seed sweep of the DST harness surfaced 112 stale minority reads and zero linearizability violations, which is the expected, correct behavior for a system that doesn't yet implement read-index or lease-based reads on the leader
-
-Run the test suite:
+## Reproducing
 
 ```bash
-go test ./...
+go build -o maelstrom-node ./cmd/maelstrom
+./maelstrom test -w lin-kv --bin /path/to/maelstrom-node \
+  --nodes n1,n2,n3,n4,n5 --time-limit 60 --rate 15 --concurrency 4n \
+  --nemesis partition --nemesis-interval 8
 ```
 
-Run the DST sweep:
-
-```bash
-go run ./cmd/sim --seeds 2000
-```
-
-## Project structure
-
-```
-raft-kv/
-├── raft/          # core consensus: elections, log replication, RPC handling
-├── kv/            # key-value state machine and apply loop
-├── sim/           # deterministic simulation framework (clock, network, storage, RNG interfaces)
-├── checker/       # linearizability checker for DST runs
-├── cmd/sim/       # seeded DST runner and simulated client workload
-├── docs/          # design notes and known issues (see docs/bugs.md)
-└── go.mod
-```
-
-## Roadmap
-
-The immediate next step is Phase 3: Maelstrom validation, running the cluster against Maelstrom's Jepsen-style workloads to get external, adversarial validation of linearizability beyond what the in-house DST harness covers. After that, snapshotting/log compaction and dynamic membership changes are the remaining pieces before this is a complete Raft implementation per the original paper.
-
-## Motivation
-
-This project exists to build real intuition for how consensus systems fail and recover, not just to pass the Raft paper's test cases, but to understand why stale reads happen, what a genuine linearizability violation would look like, and how simulation testing catches bugs that real-network testing would miss or make nondeterministic.
-
-## License
-
-MIT
+Full output (including everything not archived here) lands in `store/lin-kv/latest/`
+inside wherever you extracted Maelstrom.
