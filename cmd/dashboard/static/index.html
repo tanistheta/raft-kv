@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>raft·kv- cluster console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #eaf2e6;
+    --grid: rgba(43,33,24,0.05);
+    --cream: #fbf3e3;
+    --ink: #2b2118;
+    --dim: #6d6152;
+    --leader: #e3a300;
+    --leader-soft: #ffe9a8;
+    --quorum: #3f9a68;
+    --quorum-soft: #c9f0d7;
+    --candidate: #e0508a;
+    --candidate-soft: #ffd6e6;
+    --fault: #d9483d;
+    --fault-soft: #ffd7d1;
+    --grey-soft: #e2ddd0;
+    --pixel: 'Press Start 2P', monospace;
+    --mono: 'Space Mono', ui-monospace, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  ::selection { background: var(--quorum-soft); color: var(--ink); }
+  body {
+    background-color: var(--bg);
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 22px 22px;
+    color: var(--ink);
+    font-family: var(--mono);
+    margin: 0;
+    padding: 30px 32px 52px;
+    -webkit-font-smoothing: antialiased;
+  }
+  a, button, input, select { font-family: inherit; }
+  button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 3px solid var(--ink);
+    outline-offset: 2px;
+  }
+
+  .eyebrow {
+    font-family: var(--pixel);
+    font-size: 9px;
+    line-height: 1.8;
+    color: var(--dim);
+    margin-bottom: 10px;
+  }
+  h1 {
+    font-family: var(--pixel);
+    font-size: 18px;
+    line-height: 1.6;
+    margin: 0 0 14px;
+  }
+  h1 .accent { color: var(--leader); }
+  h1 .sep { color: var(--dim); margin: 0 2px; }
+  .subtitle {
+    font-family: var(--mono);
+    font-weight: 700;
+    color: var(--dim);
+    font-size: 13.5px;
+    margin-bottom: 22px;
+  }
+  .subtitle b { color: var(--ink); }
+
+  /* ---- shared "window" chrome ---- */
+  .win {
+    background: var(--cream);
+    border: 3px solid var(--ink);
+    box-shadow: 5px 5px 0 var(--ink);
+    margin-bottom: 22px;
+  }
+  .win-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 3px solid var(--ink);
+    padding: 6px 8px 6px 10px;
+    background: var(--quorum-soft);
+  }
+  .win-bar.leader-bar { background: var(--leader-soft); }
+  .win-bar.candidate-bar { background: var(--candidate-soft); }
+  .win-bar.unreachable-bar { background: var(--grey-soft); }
+  .win-title {
+    font-family: var(--pixel);
+    font-size: 10px;
+  }
+  .win-dots { display: flex; gap: 4px; }
+  .win-dots i { width: 9px; height: 9px; background: var(--cream); border: 2px solid var(--ink); display: block; }
+  .win-body { padding: 16px 18px; }
+
+  .cluster-panel .win-body { padding: 10px 14px 4px; }
+  #cluster svg { display: block; width: 100%; height: auto; max-height: 320px; margin: 0 auto; }
+  .cnode-label { font-family: var(--pixel); font-size: 11px; }
+  .cnode-term { font-family: var(--mono); font-size: 10.5px; font-weight: 700; fill: var(--dim); }
+
+  @keyframes ring-pulse {
+    0%, 100% { opacity: 0.6; r: 40; }
+    50%      { opacity: 0.15; r: 47; }
+  }
+  .leader-ring { animation: ring-pulse 1.8s ease-in-out infinite; transform-origin: center; }
+  @media (prefers-reduced-motion: reduce) {
+    .leader-ring { animation: none; opacity: 0.3; }
+    #cluster animateMotion { display: none; }
+  }
+  @keyframes node-sync-flash {
+    0%   { transform: scale(1); }
+    30%  { transform: scale(1.16); }
+    100% { transform: scale(1); }
+  }
+  .just-synced { animation: node-sync-flash 0.6s steps(4); transform-origin: center; transform-box: fill-box; }
+
+  /* ---- node cards ---- */
+  .nodes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 18px;
+    margin-bottom: 26px;
+  }
+  .node-card {
+    background: var(--cream);
+    border: 3px solid var(--ink);
+    box-shadow: 5px 5px 0 var(--ink);
+    transition: opacity 0.2s;
+  }
+  .node-card.unreachable { opacity: 0.55; }
+  .role-badge {
+    font-family: var(--pixel);
+    font-size: 8.5px;
+    padding: 4px 7px;
+    border: 2px solid var(--ink);
+    background: var(--cream);
+  }
+  .node-stats {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 12.5px;
+    line-height: 2;
+    color: var(--dim);
+    margin-top: 12px;
+  }
+  .node-stats b { color: var(--ink); }
+  .node-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  button {
+    background: var(--cream);
+    border: 2.5px solid var(--ink);
+    color: var(--ink);
+    font-family: var(--pixel);
+    font-size: 8.5px;
+    padding: 7px 10px;
+    cursor: pointer;
+    box-shadow: 3px 3px 0 var(--ink);
+    transition: transform 0.05s, box-shadow 0.05s;
+  }
+  button:hover:not(:disabled) { background: #fff9ec; }
+  button:active:not(:disabled), button.pressed {
+    transform: translate(3px, 3px);
+    box-shadow: 0 0 0 var(--ink);
+  }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button.danger { background: var(--fault-soft); }
+  button.heal-ish { background: var(--quorum-soft); }
+  button.primary {
+    background: var(--quorum);
+    color: #fff;
+    width: 100%;
+    padding: 11px;
+    font-size: 10px;
+    margin-top: 16px;
+  }
+
+  /* ---- lower panels ---- */
+  .panels {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 18px;
+    align-items: start;
+  }
+  @media (max-width: 720px) {
+    .panels { grid-template-columns: 1fr; }
+  }
+  .kv-form label {
+    display: block;
+    font-family: var(--pixel);
+    font-size: 8px;
+    color: var(--dim);
+    margin-bottom: 6px;
+    margin-top: 14px;
+  }
+  .kv-form input, .kv-form select {
+    width: 100%;
+    background: #fff;
+    border: 2.5px solid var(--ink);
+    color: var(--ink);
+    padding: 8px 10px;
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 13px;
+  }
+  .kv-form input::placeholder { color: #b8ac98; }
+  .kv-result {
+    margin-top: 12px;
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 12px;
+    color: var(--dim);
+    min-height: 16px;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-weight: 700; font-size: 12.5px; }
+  th { text-align: left; color: var(--dim); padding: 4px 6px; border-bottom: 2.5px solid var(--ink); font-family: var(--pixel); font-size: 7.5px; letter-spacing: 0.02em; }
+  td { padding: 7px 6px; border-bottom: 2px solid #e6dcc6; }
+  tr:first-child td { color: var(--ink); }
+  .status-OK { color: var(--quorum); }
+  .status-bad { color: var(--fault); }
+  .ops-empty { color: var(--dim); font-weight: 700; font-size: 13px; padding: 10px 2px; }
+</style>
+</head>
+<body>
+
+<div class="eyebrow">DISTRIBUTED KV STORE // RAFT CONSENSUS</div>
+<h1>raft<span class="sep">·</span><span class="accent">kv</span><span class="sep">/</span>console</h1>
+<div class="subtitle" id="subtitle">connecting...</div>
+
+<div class="win cluster-panel">
+  <div class="win-bar"><span class="win-title">CLUSTER.EXE</span><span class="win-dots"><i></i><i></i><i></i></span></div>
+  <div class="win-body"><div id="cluster"></div></div>
+</div>
+
+<div class="nodes" id="nodes"></div>
+
+<div class="panels">
+  <div class="win">
+    <div class="win-bar"><span class="win-title">SEND_OP.EXE</span><span class="win-dots"><i></i><i></i><i></i></span></div>
+    <div class="win-body">
+      <div class="kv-form">
+        <label>OP</label>
+        <select id="op">
+          <option value="put">PUT</option>
+          <option value="get">GET</option>
+          <option value="delete">DELETE</option>
+        </select>
+        <label>KEY</label>
+        <input id="key" placeholder="foo">
+        <label id="valueLabel">VALUE</label>
+        <input id="value" placeholder="bar">
+        <button class="primary" onclick="sendOp()">SEND</button>
+        <div class="kv-result" id="kvResult"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="win">
+    <div class="win-bar"><span class="win-title">TRAFFIC.LOG</span><span class="win-dots"><i></i><i></i><i></i></span></div>
+    <div class="win-body"><div id="opsTable"></div></div>
+  </div>
+</div>
+
+<script>
+const opSelect = document.getElementById('op');
+const valueLabel = document.getElementById('valueLabel');
+const valueInput = document.getElementById('value');
+opSelect.addEventListener('change', () => {
+  const hide = opSelect.value !== 'put';
+  valueLabel.style.display = hide ? 'none' : 'block';
+  valueInput.style.display = hide ? 'none' : 'block';
+});
+
+async function sendOp() {
+  const op = opSelect.value;
+  const key = document.getElementById('key').value.trim();
+  const value = document.getElementById('value').value.trim();
+  const resultEl = document.getElementById('kvResult');
+  if (!key) { resultEl.textContent = 'Key is required.'; return; }
+  resultEl.textContent = 'Sending...';
+  try {
+    const res = await fetch('/api/kv', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({op, key, value})
+    });
+    const data = await res.json();
+    if (data.err) {
+      resultEl.textContent = 'Error: ' + data.err;
+    } else {
+      resultEl.textContent = `${data.status}` + (data.servedBy ? ` - served by ${data.servedBy}` : '') + (op === 'get' && data.value ? ` = "${data.value}"` : '');
+    }
+  } catch (e) {
+    resultEl.textContent = 'Request failed: ' + e;
+  }
+}
+
+const POLL_MS = 700; // single source of truth: JS poll interval AND the SVG heartbeat animation duration below
+const pendingChaos = new Set(); // node IDs with a chaos action currently in flight
+
+async function chaosAction(action, node, btn) {
+  if (pendingChaos.has(node)) return; // already have one in flight for this node - ignore the extra click
+  pendingChaos.add(node);
+  renderNodesFromLastState();
+  try {
+    const res = await fetch(`/api/chaos/${action}/${node}`, {method: 'POST'});
+    if (!res.ok) {
+      const msg = await res.text();
+      alert(`${action} ${node} failed: ${msg}`);
+    }
+  } catch (e) {
+    alert(`${action} ${node} failed: ${e}`);
+  } finally {
+    pendingChaos.delete(node);
+    poll();
+  }
+}
+
+function roleClass(node) {
+  if (!node.reachable) return 'role-unreachable';
+  return 'role-' + node.role;
+}
+
+function barClass(node) {
+  if (!node.reachable) return 'unreachable-bar';
+  if (node.role === 'LEADER') return 'leader-bar';
+  if (node.role === 'CANDIDATE') return 'candidate-bar';
+  return ''; // follower uses the default mint bar
+}
+
+let lastNodes = [];
+let lastCommitByID = {};
+
+function renderNodesFromLastState() {
+  renderNodes(lastNodes);
+  renderCluster(lastNodes, new Set());
+}
+
+function layoutPositions(n, cx, cy, radius) {
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const angle = (-90 + i * (360 / n)) * Math.PI / 180;
+    pts.push({ x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) });
+  }
+  return pts;
+}
+
+function renderCluster(nodes, justSynced) {
+  const el = document.getElementById('cluster');
+  if (!nodes || nodes.length === 0) { el.innerHTML = ''; return; }
+
+  const w = 560, h = 300, cx = w / 2, cy = h / 2 - 6, radius = 96, r = 32;
+  const pts = layoutPositions(nodes.length, cx, cy, radius).map((p, i) => ({ ...p, node: nodes[i] }));
+  const leaderPt = pts.find(p => p.node.reachable && p.node.role === 'LEADER');
+
+  let edges = '';
+  if (leaderPt) {
+    for (const p of pts) {
+      if (p === leaderPt || !p.node.reachable) continue;
+      edges += `
+        <line x1="${leaderPt.x}" y1="${leaderPt.y}" x2="${p.x}" y2="${p.y}" stroke="var(--ink)" stroke-width="2.5" opacity="0.35"/>
+        <circle r="5" fill="var(--leader)" stroke="var(--ink)" stroke-width="1.5">
+          <animateMotion dur="${POLL_MS}ms" repeatCount="indefinite" path="M ${leaderPt.x},${leaderPt.y} L ${p.x},${p.y}"/>
+        </circle>
+        <circle r="5" fill="var(--leader)" stroke="var(--ink)" stroke-width="1.5" opacity="0.55">
+          <animateMotion dur="${POLL_MS}ms" begin="-0.35s" repeatCount="indefinite" path="M ${leaderPt.x},${leaderPt.y} L ${p.x},${p.y}"/>
+        </circle>`;
+    }
+  } else {
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = i + 1; j < pts.length; j++) {
+        if (!pts[i].node.reachable || !pts[j].node.reachable) continue;
+        edges += `<line x1="${pts[i].x}" y1="${pts[i].y}" x2="${pts[j].x}" y2="${pts[j].y}" stroke="var(--candidate)" stroke-width="2" stroke-dasharray="6 5" opacity="0.6"/>`;
+      }
+    }
+  }
+
+  // Node circles get a flat offset duplicate behind them (dx/dy shift,
+  // solid ink fill, no blur) - the same hard "sticker shadow" the window
+  // chrome uses, just drawn manually since SVG shapes don't get CSS
+  // box-shadow.
+  const circles = pts.map(({node, x, y}) => {
+    const isLeader = node.reachable && node.role === 'LEADER';
+    const isCandidate = node.reachable && node.role === 'CANDIDATE';
+    const color = !node.reachable ? '#b8ac98' : isLeader ? 'var(--leader)' : isCandidate ? 'var(--candidate)' : 'var(--quorum)';
+    const fill = !node.reachable ? '#e2ddd0' : isLeader ? 'var(--leader-soft)' : isCandidate ? 'var(--candidate-soft)' : 'var(--quorum-soft)';
+    const dash = node.reachable ? '' : 'stroke-dasharray="5 4"';
+    const flash = justSynced.has(node.id) ? 'just-synced' : '';
+    const ring = isLeader ? `<circle class="leader-ring" cx="${x}" cy="${y}" r="40" fill="none" stroke="var(--leader)" stroke-width="2.5"/>` : '';
+    return `
+      ${ring}
+      <g class="${flash}">
+        <circle cx="${x + 4}" cy="${y + 4}" r="${r}" fill="var(--ink)"/>
+        <circle cx="${x}" cy="${y}" r="${r}" fill="${fill}" stroke="${color}" stroke-width="3" ${dash}/>
+        <text x="${x}" y="${y + 5}" text-anchor="middle" class="cnode-label" fill="var(--ink)">${node.id}</text>
+      </g>
+      <text x="${x}" y="${y + r + 20}" text-anchor="middle" class="cnode-term">term ${node.reachable ? node.term : '-'}</text>
+    `;
+  }).join('');
+
+  el.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet">${edges}${circles}</svg>`;
+}
+
+function renderNodes(nodes) {
+  const container = document.getElementById('nodes');
+  container.innerHTML = nodes.map(n => {
+    const isLeader = n.reachable && n.role === 'LEADER';
+    const cardClass = 'node-card' + (!n.reachable ? ' unreachable' : '');
+    const roleText = n.reachable ? n.role : 'UNREACHABLE';
+    const pending = pendingChaos.has(n.id);
+    const dis = pending ? 'disabled' : '';
+    return `
+      <div class="${cardClass}">
+        <div class="win-bar ${barClass(n)}">
+          <span class="win-title">${n.id.toUpperCase()}.SYS</span>
+          <span class="win-dots"><i></i><i></i><i></i></span>
+        </div>
+        <div class="win-body">
+          <span class="role-badge ${roleClass(n)}">${pending ? 'WORKING' : roleText}</span>
+          <div class="node-stats">
+            term <b>${n.reachable ? n.term : '-'}</b><br>
+            commit index <b>${n.reachable ? n.commitIndex : '-'}</b><br>
+            last log index <b>${n.reachable ? n.lastLogIndex : '-'}</b><br>
+            leader hint <b>${n.reachable ? (n.leaderId || '(none)') : '-'}</b>
+          </div>
+          <div class="node-actions">
+            <button class="danger" ${dis} onclick="chaosAction('kill','${n.id}',this)">KILL</button>
+            <button class="heal-ish" ${dis} onclick="chaosAction('start','${n.id}',this)">START</button>
+            <button class="danger" ${dis} onclick="chaosAction('isolate','${n.id}',this)">ISOLATE</button>
+            <button class="heal-ish" ${dis} onclick="chaosAction('heal','${n.id}',this)">HEAL</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderOps(ops) {
+  const el = document.getElementById('opsTable');
+  if (!ops || ops.length === 0) {
+    el.innerHTML = '<div class="ops-empty">No operations yet - send one on the left.</div>';
+    return;
+  }
+  const rows = ops.slice().reverse().slice(0, 30).map(op => {
+    const t = new Date(op.time).toLocaleTimeString();
+    const statusClass = op.status === 'OK' ? 'status-OK' : 'status-bad';
+    const statusText = op.err ? 'ERR' : op.status;
+    return `<tr>
+      <td>${t}</td>
+      <td>${op.op.toUpperCase()}</td>
+      <td>${op.key}</td>
+      <td>${op.op === 'put' ? op.value : (op.value || '')}</td>
+      <td class="${statusClass}">${statusText}</td>
+      <td>${op.servedBy || ''}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<table>
+    <tr><th>time</th><th>op</th><th>key</th><th>value</th><th>status</th><th>served by</th></tr>
+    ${rows}
+  </table>`;
+}
+
+async function poll() {
+  try {
+    const res = await fetch('/api/state');
+    const data = await res.json();
+    const nodes = data.nodes || [];
+
+    const justSynced = new Set();
+    for (const n of nodes) {
+      const prev = lastCommitByID[n.id];
+      if (n.reachable && prev !== undefined && n.commitIndex > prev) {
+        justSynced.add(n.id);
+      }
+    }
+    lastCommitByID = {};
+    for (const n of nodes) { if (n.reachable) lastCommitByID[n.id] = n.commitIndex; }
+
+    lastNodes = nodes;
+    renderNodes(lastNodes);
+    renderCluster(lastNodes, justSynced);
+    renderOps(data.ops || []);
+    const leader = lastNodes.find(n => n.reachable && n.role === 'LEADER');
+    document.getElementById('subtitle').textContent = leader
+      ? `${lastNodes.length} nodes online - ${leader.id} leads at term ${leader.term}`
+      : `${lastNodes.length} nodes online - no leader currently visible`;
+  } catch (e) {
+    document.getElementById('subtitle').textContent = 'Dashboard cannot reach itself (?) - ' + e;
+  }
+}
+
+poll();
+setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>
