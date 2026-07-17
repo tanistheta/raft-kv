@@ -35,6 +35,12 @@ func (n *Node) handleAppendEntries(args AppendEntriesArgs) AppendEntriesReply {
 	}
 	n.Role = Follower
 	n.resetElectionTimer()
+	// Recorded even if the consistency check below rejects this
+	// particular AppendEntries: args.Term >= n.CurrentTerm already
+	// established args.LeaderID as the legitimate leader for this term,
+	// regardless of whether this specific batch of entries happens to
+	// line up with our log yet.
+	n.LeaderID = args.LeaderID
 
 	if args.PrevLogIndex > 0 {
 		entry, err := n.GetLogEntry(args.PrevLogIndex)
@@ -126,6 +132,10 @@ func (n *Node) handleAppendEntriesReply(reply AppendEntriesReply) {
 		n.CurrentTerm = reply.Term
 		n.Role = Follower
 		n.VotedFor = ""
+		// This node just learned it's no longer (or never was) leader
+		// for the current term. It doesn't yet know who is - that
+		// comes later via an AppendEntries from whoever actually won.
+		n.LeaderID = ""
 		n.Storage.SaveState(PersistentState{
 			CurrentTerm: n.CurrentTerm,
 			VotedFor:    n.VotedFor,

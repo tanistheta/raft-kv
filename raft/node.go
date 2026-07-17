@@ -17,6 +17,19 @@ type Node struct {
 	VotesReceived int
 	Peers         []NodeID
 
+	// LeaderID is this node's best current knowledge of who the leader
+	// is, for callers (prod.ClientAPI) that need to forward a client
+	// request to the leader instead of just rejecting it. Empty means
+	// "unknown" (e.g. mid-election, or a follower that hasn't heard from
+	// a leader yet). This is advisory, not authoritative: it can lag
+	// briefly behind reality (an old leader can still appear here for a
+	// moment after a new election starts elsewhere), same as every other
+	// piece of state a follower holds about the wider cluster. Forwarding
+	// logic must treat a stale LeaderID as just another case of "that
+	// wasn't actually the leader" and handle it the same way a direct
+	// client call would.
+	LeaderID NodeID
+
 	CommitIndex  int
 	LastApplied  int
 	NextIndex    map[NodeID]int
