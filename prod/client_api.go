@@ -19,7 +19,7 @@ import (
 // clientOpTimeout bounds how long a leader-side write waits for its
 // proposed entry to be decided (Committed or Superseded), and how long a
 // forwarded call waits on the leader it was sent to. Set comfortably
-// above one heartbeat interval (raft/election.go's 50ms runAsLeader tick)
+// above one heartbeat interval (cmd/node's -heartbeat, 250ms by default)
 // so ordinary replication latency never trips it, and comfortably under a
 // typical election timeout (150-300ms base, but a real cluster can be
 // mid-election when a request arrives) so a genuinely stuck cluster fails
@@ -36,7 +36,7 @@ const clientOpTimeout = 3 * time.Second
 // ClientAPI to GRPCTransport internals. A short poll is the simplest thing
 // that's still cheap - worst case this adds one interval of latency on
 // top of whatever heartbeat tick actually committed the entry.
-const clientPollInterval = 10 * time.Millisecond
+const clientPollInterval = 50 * time.Millisecond
 
 // ClientAPI implements raftrpc.ClientAPIServer against a raft.Node +
 // kv.StateMachine pair - the production, gRPC-facing counterpart to

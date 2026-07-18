@@ -302,7 +302,7 @@ async function sendOp() {
   }
 }
 
-const POLL_MS = 700; // single source of truth: JS poll interval AND the SVG heartbeat animation duration below
+const POLL_MS = 2000; // single source of truth: JS poll interval AND the SVG heartbeat animation duration below
 const pendingChaos = new Set(); // node IDs with a chaos action currently in flight
 
 async function chaosAction(action, node, btn) {

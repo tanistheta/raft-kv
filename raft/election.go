@@ -2,6 +2,16 @@ package raft
 
 import "time"
 
+// Original timer values, kept as the zero-value fallback for
+// Node.ElectionTimeoutBase/Jitter and Node.HeartbeatInterval - see the
+// doc comment on those fields (node.go) for why they're now
+// configurable.
+const (
+	defaultElectionTimeoutBase   = 150 * time.Millisecond
+	defaultElectionTimeoutJitter = 150 * time.Millisecond
+	defaultHeartbeatInterval     = 50 * time.Millisecond
+)
+
 type RequestVoteArgs struct {
 	Term         int
 	CandidateID  NodeID
@@ -112,9 +122,26 @@ func (n *Node) handleRequestVoteReply(reply RequestVoteReply) {
 }
 
 func (n *Node) electionTimeout() time.Duration {
-	base := 150 * time.Millisecond
-	jitter := time.Duration(n.RNG.Intn(150)) * time.Millisecond
-	return base + jitter
+	base := n.ElectionTimeoutBase
+	if base <= 0 {
+		base = defaultElectionTimeoutBase
+	}
+	jitter := n.ElectionTimeoutJitter
+	if jitter <= 0 {
+		jitter = defaultElectionTimeoutJitter
+	}
+	jitterMs := int(jitter / time.Millisecond)
+	if jitterMs < 1 {
+		jitterMs = 1 // RNG.Intn panics on 0; sub-millisecond jitter rounds up
+	}
+	return base + time.Duration(n.RNG.Intn(jitterMs))*time.Millisecond
+}
+
+func (n *Node) heartbeatInterval() time.Duration {
+	if n.HeartbeatInterval > 0 {
+		return n.HeartbeatInterval
+	}
+	return defaultHeartbeatInterval
 }
 
 func (n *Node) runAsLeader() {
@@ -122,7 +149,7 @@ func (n *Node) runAsLeader() {
 		return
 	}
 	n.sendHeartbeat()
-	n.Clock.AfterFunc(50*time.Millisecond, func() {
+	n.Clock.AfterFunc(n.heartbeatInterval(), func() {
 		n.runAsLeader()
 	})
 }

@@ -24,7 +24,7 @@ import (
 // dropped message on any other transport. Kept well under a typical
 // election timeout so a genuinely unreachable peer can't stall the caller
 // long enough to look like an unresponsive node from the outside.
-const sendTimeout = 2 * time.Second
+const sendTimeout = 500 * time.Millisecond
 
 // GRPCTransport implements raft.Network over real gRPC connections between
 // real OS processes - the transport Phase 4's Docker Compose cluster and

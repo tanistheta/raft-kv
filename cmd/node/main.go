@@ -62,7 +62,15 @@ func main() {
 		idFlag         = flag.String("id", "", "this node's ID (must match one -peer entry's id)")
 		dataDirFlag    = flag.String("data-dir", "", "directory for this node's WAL (log + state)")
 		raftListenFlag = flag.String("raft-listen", "", "override where this node's raft transport binds (default: this node's own -peer raft address)")
-		peers          peerList
+		// Timer defaults here are deliberately far gentler than raft/'s
+		// paper-style internal defaults (150-300ms timeout, 50ms
+		// heartbeat): a real deployment on a small shared VM sees
+		// scheduling latency that makes those churn (see raft.Node's
+		// doc comment on the timing fields), and the churn's per-term
+		// fsyncs are themselves a significant load on such a machine.
+		electionTimeoutFlag = flag.Duration("election-timeout", time.Second, "base election timeout; actual timeout is drawn uniformly from [base, 2*base). Must be several times -heartbeat and comfortably above worst-case scheduling latency")
+		heartbeatFlag       = flag.Duration("heartbeat", 250*time.Millisecond, "leader heartbeat (AppendEntries) interval; keep well under -election-timeout")
+		peers               peerList
 	)
 	// One -peer flag per cluster member, self included: this node finds
 	// its own listen addresses by matching -id against the same list
@@ -73,13 +81,13 @@ func main() {
 	flag.Var(&peers, "peer", "id=raftAddr=clientAddr for one cluster member; repeat once per member, including this node")
 	flag.Parse()
 
-	if err := run(*idFlag, *dataDirFlag, *raftListenFlag, []string(peers)); err != nil {
+	if err := run(*idFlag, *dataDirFlag, *raftListenFlag, []string(peers), *electionTimeoutFlag, *heartbeatFlag); err != nil {
 		fmt.Fprintf(os.Stderr, "raft-kv node exited: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(idStr, dataDir, raftListen string, peerSpecs []string) error {
+func run(idStr, dataDir, raftListen string, peerSpecs []string, electionTimeout, heartbeat time.Duration) error {
 	if idStr == "" {
 		return fmt.Errorf("-id is required")
 	}
@@ -163,14 +171,17 @@ func run(idStr, dataDir, raftListen string, peerSpecs []string) error {
 	tracker := kv.NewResultTracker(store)
 
 	raftNode := &raft.Node{
-		NodeID:       selfID,
-		Peers:        otherIDs,
-		Role:         raft.Follower,
-		StateMachine: tracker,
-		Clock:        prod.NewRealClock(&nodeMu),
-		Network:      transport,
-		Storage:      wal,
-		RNG:          prod.RealRNG{},
+		NodeID:                selfID,
+		Peers:                 otherIDs,
+		Role:                  raft.Follower,
+		StateMachine:          tracker,
+		Clock:                 prod.NewRealClock(&nodeMu),
+		Network:               transport,
+		Storage:               wal,
+		RNG:                   prod.RealRNG{},
+		ElectionTimeoutBase:   electionTimeout,
+		ElectionTimeoutJitter: electionTimeout,
+		HeartbeatInterval:     heartbeat,
 	}
 
 	nodeMu.Lock()
@@ -195,8 +206,8 @@ func run(idStr, dataDir, raftListen string, peerSpecs []string) error {
 		}()
 	}
 
-	fmt.Fprintf(os.Stderr, "raft-kv node %s: raft=%s client=%s data-dir=%s peers=%v\n",
-		selfID, selfRaftAddr, selfClientAddr, dataDir, otherIDs)
+	fmt.Fprintf(os.Stderr, "raft-kv node %s: raft=%s client=%s data-dir=%s peers=%v election-timeout=%s heartbeat=%s\n",
+		selfID, selfRaftAddr, selfClientAddr, dataDir, otherIDs, electionTimeout, heartbeat)
 
 	// Block until asked to stop, then shut down in dependency order:
 	// stop accepting new client work first, then stop the Raft node

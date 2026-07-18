@@ -1,5 +1,7 @@
 package raft
 
+import "time"
+
 type Role string
 
 const (
@@ -29,6 +31,21 @@ type Node struct {
 	// wasn't actually the leader" and handle it the same way a direct
 	// client call would.
 	LeaderID NodeID
+
+	// ElectionTimeoutBase, ElectionTimeoutJitter, and HeartbeatInterval
+	// tune this node's timers. Zero values fall back to the original
+	// constants (150ms base, 150ms jitter, 50ms heartbeat), so every
+	// existing construction of Node - all of sim/, maelstrom/, and their
+	// tests - keeps byte-identical timing without touching a single call
+	// site. cmd/node overrides them for real deployments: the paper's
+	// aggressive defaults assume scheduling latency far below what a
+	// small shared VM actually delivers, and on such a VM they cause
+	// election churn (and the fsync load that comes with it) whenever the
+	// machine gets slow. The election timeout drawn is uniform in
+	// [Base, Base+Jitter).
+	ElectionTimeoutBase   time.Duration
+	ElectionTimeoutJitter time.Duration
+	HeartbeatInterval     time.Duration
 
 	CommitIndex  int
 	LastApplied  int

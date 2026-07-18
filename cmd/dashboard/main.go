@@ -24,12 +24,12 @@ var staticFS embed.FS
 // it. Short enough that a leader election or a killed node shows up
 // within roughly one UI refresh cycle, long enough not to spam three
 // Status RPCs per second for no reason.
-const pollInterval = 500 * time.Millisecond
+const pollInterval = 2 * time.Second
 
 // statusTimeout bounds a single node's Status call. Deliberately short -
 // a node that doesn't answer within this window is shown as unreachable
 // rather than making the whole /api/state response wait on it.
-const statusTimeout = 400 * time.Millisecond
+const statusTimeout = 800 * time.Millisecond
 
 // nodeList collects repeated -node flags, same flag.Value pattern as
 // cmd/node's peerList.
