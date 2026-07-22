@@ -27,18 +27,6 @@ const (
 // ResolveIndex answers "what happened to the entry I appended at index,
 // term" against node, which may or may not still be leader and may not be
 // the same node that was leader when the entry was proposed.
-//
-// This exists because sim/workload.go and maelstrom/client.go both need to
-// answer exactly this question and used to each carry their own copy of the
-// logic. One of those copies had a real bug (see docs/bugs.md, "Client
-// workload falsely 'abandoned' writes that later committed for real"):
-// anchoring the check to the *original* proposing leader instead of
-// whoever's leader *now*, and treating "the current leader's log hasn't
-// reached this index yet" as proof of loss when Raft only actually
-// overwrites a slot when something else is appended there. Both mistakes
-// are avoided here: callers pass whichever node they currently consider
-// leader (which may have changed since the entry was proposed), and only an
-// actual conflicting entry at that index counts as Superseded.
 func ResolveIndex(node *raft.Node, index, term int) IndexOutcome {
 	if node == nil || node.LastLogIndex() < index {
 		return StillPending
@@ -47,11 +35,17 @@ func ResolveIndex(node *raft.Node, index, term int) IndexOutcome {
 	if err != nil {
 		return StillPending
 	}
+	if node.CommitIndex < index {
+		// Something else may currently sit at this index, but Raft only
+		// guarantees a committed entry can't be overwritten again - an
+		// uncommitted one (like a no-op from a leader that loses power
+		// moments later) can still be reverted back to the original.
+		// Don't call it Superseded until the entry actually sitting here
+		// is durable.
+		return StillPending
+	}
 	if entry.Term != term {
 		return Superseded
-	}
-	if node.CommitIndex < index {
-		return StillPending
 	}
 	return Committed
 }
